@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment (secrets, local overrides)
+.env
+.env.local
+.env.*.local
+
+# Logs and cache
+*.log
+npm-debug.log*
+.npm
+.vite/
+*.tsbuildinfo
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Optional: uncomment if you use pnpm
+# pnpm-lock.yaml
