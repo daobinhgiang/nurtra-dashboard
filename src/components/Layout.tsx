@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { LayoutDashboard, Users, TrendingUp, TrendingDown, LogOut } from 'lucide-react'
+import { LayoutDashboard, Users, TrendingUp, TrendingDown, LogOut, BookOpen } from 'lucide-react'
 import { signOut } from 'firebase/auth'
 import { auth } from '../firebase'
 import { useAuth } from '../context/AuthContext'
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/retention', label: 'Retention', icon: TrendingUp, end: true },
   { to: '/churn', label: 'Churn', icon: TrendingDown, end: true },
   { to: '/users', label: 'Users', icon: Users, end: false },
+  { to: '/journals', label: 'Journals', icon: BookOpen, end: true },
 ]
 
 export default function Layout() {

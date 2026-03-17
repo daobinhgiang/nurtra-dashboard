@@ -32,6 +32,15 @@ export interface NurtraUser {
   fcmToken?: string
 }
 
+export interface JournalEntry {
+  id: string
+  title: string
+  thoughts: string
+  aiResponse?: string
+  topic?: string
+  createdAt: Timestamp
+}
+
 export interface DashboardStats {
   totalUsers: number
   totalBingesOvercome: number

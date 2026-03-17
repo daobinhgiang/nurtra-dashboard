@@ -8,6 +8,7 @@ import RetentionPage from './pages/RetentionPage'
 import ChurnPage from './pages/ChurnPage'
 import UsersPage from './pages/UsersPage'
 import UserDetailPage from './pages/UserDetailPage'
+import JournalsPage from './pages/JournalsPage'
 
 const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
       { path: 'churn', element: <ChurnPage /> },
       { path: 'users', element: <UsersPage /> },
       { path: 'users/:userId', element: <UserDetailPage /> },
+      { path: 'journals', element: <JournalsPage /> },
     ],
   },
 ])

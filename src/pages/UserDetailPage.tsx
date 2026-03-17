@@ -5,14 +5,19 @@ import {
   getDoc,
   getCountFromServer,
   collection,
+  getDocs,
+  orderBy,
+  query,
+  limit,
 } from 'firebase/firestore'
 import {
   ArrowLeft, Trophy, Utensils, BookOpen, AlertTriangle,
   CheckCircle2, Waves, GraduationCap, Smartphone, Clock,
-  Mail, User, Loader2, Flame, Star,
+  Mail, User, Loader2, Flame, Star, ChevronDown, ChevronUp,
+  Bot,
 } from 'lucide-react'
 import { db } from '../firebase'
-import type { NurtraUser } from '../types'
+import type { NurtraUser, JournalEntry } from '../types'
 import type { Timestamp } from 'firebase/firestore'
 
 function formatDate(ts: Timestamp | undefined): string {
@@ -100,6 +105,9 @@ export default function UserDetailPage() {
   const [subCounts, setSubCounts] = useState<SubCounts>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
+  const [expandedEntry, setExpandedEntry] = useState<string | null>(null)
+  const [journalSectionOpen, setJournalSectionOpen] = useState(true)
 
   useEffect(() => {
     if (!userId) return
@@ -114,16 +122,25 @@ export default function UserDetailPage() {
         const userData = { uid: userSnap.id, ...userSnap.data() } as NurtraUser
         setUser(userData)
 
-        const [foodSnap, journalSnap, bingeSnap] = await Promise.all([
+        const [foodSnap, journalSnap, bingeSnap, journalDocsSnap] = await Promise.all([
           getCountFromServer(collection(db, 'users', userId!, 'foodLogs')),
           getCountFromServer(collection(db, 'users', userId!, 'journalEntries')),
           getCountFromServer(collection(db, 'users', userId!, 'bingeLogs')),
+          getDocs(query(
+            collection(db, 'users', userId!, 'journalEntries'),
+            orderBy('createdAt', 'desc'),
+            limit(50),
+          )),
         ])
         setSubCounts({
           foodLogs: foodSnap.data().count,
           journalEntries: journalSnap.data().count,
           bingeLogs: bingeSnap.data().count,
         })
+        setJournalEntries(journalDocsSnap.docs.map(d => ({
+          id: d.id,
+          ...d.data(),
+        } as JournalEntry)))
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load user')
       } finally {
@@ -203,6 +220,80 @@ export default function UserDetailPage() {
           <span className="text-xs text-slate-400">Active {timeAgo(user.LastLoggedIn ?? user.lastOnline)}</span>
         </div>
       </div>
+
+      {/* Journal Entries Section */}
+      {journalEntries.length > 0 && (
+        <div className="mb-6 bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setJournalSectionOpen((o) => !o)}
+            className="w-full px-4 py-3.5 border-b border-slate-100 flex items-center gap-2 hover:bg-slate-50/50 transition-colors text-left"
+          >
+            <BookOpen className="w-4 h-4 text-indigo-500 shrink-0" />
+            <h2 className="text-sm font-semibold text-slate-700">Journal Entries</h2>
+            <span className="ml-auto text-xs text-slate-400">{subCounts.journalEntries} total</span>
+            {journalSectionOpen ? (
+              <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+            )}
+          </button>
+          {journalSectionOpen && (
+          <div className="divide-y divide-slate-50">
+            {journalEntries.map(entry => {
+              const isExpanded = expandedEntry === entry.id
+              return (
+                <div key={entry.id} className="px-4 py-3">
+                  <button
+                    className="w-full text-left flex items-start gap-3"
+                    onClick={() => setExpandedEntry(isExpanded ? null : entry.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-medium text-slate-800 truncate">{entry.title}</span>
+                        {entry.topic && (
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 shrink-0">{entry.topic}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {entry.createdAt?.toDate().toLocaleDateString('en-US', {
+                          month: 'short', day: 'numeric', year: 'numeric',
+                          hour: '2-digit', minute: '2-digit',
+                        })}
+                      </p>
+                      {!isExpanded && (
+                        <p className="text-sm text-slate-500 mt-1 line-clamp-2">{entry.thoughts}</p>
+                      )}
+                    </div>
+                    {isExpanded
+                      ? <ChevronUp className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
+                      : <ChevronDown className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
+                    }
+                  </button>
+
+                  {isExpanded && (
+                    <div className="mt-3 space-y-3">
+                      <div className="bg-slate-50 rounded-xl px-3 py-2.5">
+                        <p className="text-xs font-medium text-slate-400 mb-1">Thoughts</p>
+                        <p className="text-sm text-slate-700 whitespace-pre-wrap">{entry.thoughts}</p>
+                      </div>
+                      {entry.aiResponse && (
+                        <div className="bg-indigo-50 rounded-xl px-3 py-2.5">
+                          <p className="text-xs font-medium text-indigo-400 mb-1 flex items-center gap-1">
+                            <Bot className="w-3 h-3" /> AI Response
+                          </p>
+                          <p className="text-sm text-indigo-900 whitespace-pre-wrap">{entry.aiResponse}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         {/* Left column */}

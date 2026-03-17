@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   collection,
@@ -11,7 +11,7 @@ import {
   type QueryConstraint,
   type DocumentSnapshot,
 } from 'firebase/firestore'
-import { Search, ChevronRight, Loader2 } from 'lucide-react'
+import { Search, ChevronRight, Loader2, X, SlidersHorizontal } from 'lucide-react'
 import { db } from '../firebase'
 import type { NurtraUser } from '../types'
 import type { Timestamp } from 'firebase/firestore'
@@ -20,6 +20,7 @@ const PAGE_SIZE = 50
 
 type SortKey = 'newest' | 'oldest' | 'recentlyActive' | 'name' | 'urgesOvercome'
 type FilterKey = 'all' | 'onboarded' | 'notOnboarded'
+type OnboardedWithin = 0 | 7 | 30 | 90
 
 function timeAgo(ts: Timestamp | undefined): string {
   if (!ts) return '—'
@@ -52,6 +53,10 @@ export default function UsersPage() {
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState<SortKey>('newest')
   const [filter, setFilter] = useState<FilterKey>('all')
+  const [platformFilter, setPlatformFilter] = useState<string>('all')
+  const [minLevelFilter, setMinLevelFilter] = useState<number>(0)
+  const [appVersionFilter, setAppVersionFilter] = useState<string>('all')
+  const [onboardedWithin, setOnboardedWithin] = useState<OnboardedWithin>(0)
 
   const sortFields: Record<SortKey, [string, 'asc' | 'desc']> = {
     newest: ['createdAt', 'desc'],
@@ -94,60 +99,180 @@ export default function UsersPage() {
     loadUsers(true)
   }, [sort, filter]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const filtered = search.trim()
-    ? users.filter((u) => {
-        const q = search.toLowerCase()
-        return (
-          (u.email ?? '').toLowerCase().includes(q) ||
-          (u.displayName ?? '').toLowerCase().includes(q) ||
-          (u.name ?? '').toLowerCase().includes(q)
-        )
-      })
-    : users
+  const availablePlatforms = useMemo(() => {
+    const seen = new Set<string>()
+    users.forEach((u) => { if (u.platform) seen.add(u.platform) })
+    return Array.from(seen).sort()
+  }, [users])
+
+  const availableAppVersions = useMemo(() => {
+    const seen = new Set<string>()
+    users.forEach((u) => { if (u.appVersion) seen.add(u.appVersion) })
+    return Array.from(seen).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+  }, [users])
+
+  const filtered = useMemo(() => {
+    const cutoff = onboardedWithin > 0 ? Date.now() - onboardedWithin * 24 * 60 * 60 * 1000 : null
+    return users.filter((u) => {
+      const q = search.trim().toLowerCase()
+      if (q) {
+        const name = (u.displayName ?? u.name ?? u.email ?? u.uid ?? '').toLowerCase()
+        const email = (u.email ?? '').toLowerCase()
+        if (!name.includes(q) && !email.includes(q)) return false
+      }
+      if (platformFilter !== 'all') {
+        const p = (u.platform ?? '').toLowerCase()
+        if (p !== platformFilter.toLowerCase()) return false
+      }
+      if (appVersionFilter !== 'all' && (u.appVersion ?? '') !== appVersionFilter) return false
+      if (minLevelFilter > 0 && (u.currentLevel ?? 0) < minLevelFilter) return false
+      if (cutoff !== null) {
+        if (!u.onboardingCompletedAt) return false
+        if (u.onboardingCompletedAt.toMillis() < cutoff) return false
+      }
+      return true
+    })
+  }, [users, search, platformFilter, appVersionFilter, minLevelFilter, onboardedWithin])
+
+  const isFiltered =
+    search.trim().length > 0 ||
+    platformFilter !== 'all' ||
+    filter !== 'all' ||
+    appVersionFilter !== 'all' ||
+    minLevelFilter > 0 ||
+    onboardedWithin > 0
+
+  function resetFilters() {
+    setSearch('')
+    setPlatformFilter('all')
+    setFilter('all')
+    setAppVersionFilter('all')
+    setMinLevelFilter(0)
+    setOnboardedWithin(0)
+  }
+
+  const selectClass =
+    'text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent cursor-pointer'
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-6 flex items-center gap-2.5">
         <h1 className="text-2xl font-bold text-slate-900">Users</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {loading ? 'Loading...' : `${users.length}${hasMore ? '+' : ''} users`}
-        </p>
+        <span className="text-sm text-slate-500">
+          {loading
+            ? 'Loading...'
+            : isFiltered
+              ? `${filtered.length} of ${users.length}${hasMore ? '+' : ''} users`
+              : `${users.length}${hasMore ? '+' : ''} users`}
+        </span>
       </div>
 
       {/* Controls */}
-      <div className="flex items-center gap-3 mb-4">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email..."
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
-          />
+      <div className="mb-5 space-y-2">
+        {/* Search row */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative max-w-xs flex-1 min-w-[200px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Filter by name or email..."
+              className="w-full pl-9 pr-9 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 rounded"
+                aria-label="Clear search"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className={selectClass}
+          >
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="recentlyActive">Recently active</option>
+            <option value="name">Name A–Z</option>
+            <option value="urgesOvercome">Most urges overcome</option>
+          </select>
         </div>
 
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value as FilterKey)}
-          className="px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="all">All users</option>
-          <option value="onboarded">Onboarded</option>
-          <option value="notOnboarded">Not onboarded</option>
-        </select>
+        {/* Characteristic filters row (same as Journals tab) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
 
-        <select
-          value={sort}
-          onChange={(e) => setSort(e.target.value as SortKey)}
-          className="px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-        >
-          <option value="newest">Newest first</option>
-          <option value="oldest">Oldest first</option>
-          <option value="recentlyActive">Recently active</option>
-          <option value="name">Name A–Z</option>
-          <option value="urgesOvercome">Most urges overcome</option>
-        </select>
+          <select
+            value={platformFilter}
+            onChange={(e) => setPlatformFilter(e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">All platforms</option>
+            {availablePlatforms.map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+
+          <select
+            value={filter}
+            onChange={(e) => setFilter(e.target.value as FilterKey)}
+            className={selectClass}
+          >
+            <option value="all">Any onboarding</option>
+            <option value="onboarded">Onboarding complete</option>
+            <option value="notOnboarded">Onboarding incomplete</option>
+          </select>
+
+          <select
+            value={minLevelFilter}
+            onChange={(e) => setMinLevelFilter(Number(e.target.value))}
+            className={selectClass}
+          >
+            <option value={0}>Any level</option>
+            <option value={2}>Level 2+</option>
+            <option value={5}>Level 5+</option>
+            <option value={10}>Level 10+</option>
+          </select>
+
+          <select
+            value={appVersionFilter}
+            onChange={(e) => setAppVersionFilter(e.target.value)}
+            className={selectClass}
+          >
+            <option value="all">Any version</option>
+            {availableAppVersions.map((v) => (
+              <option key={v} value={v}>{v}</option>
+            ))}
+          </select>
+
+          <select
+            value={onboardedWithin}
+            onChange={(e) => setOnboardedWithin(Number(e.target.value) as OnboardedWithin)}
+            className={selectClass}
+          >
+            <option value={0}>Any onboard date</option>
+            <option value={7}>Onboarded last 7d</option>
+            <option value={30}>Onboarded last 30d</option>
+            <option value={90}>Onboarded last 90d</option>
+          </select>
+
+          {isFiltered && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="text-xs text-indigo-500 hover:text-indigo-700 underline underline-offset-2 ml-1"
+            >
+              Reset filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* User list */}
@@ -158,7 +283,9 @@ export default function UsersPage() {
             <span className="text-sm">Loading users...</span>
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-center py-16 text-sm text-slate-400">No users found</p>
+          <p className="text-center py-16 text-sm text-slate-400">
+            {isFiltered ? 'No users match the current filters.' : 'No users found'}
+          </p>
         ) : (
           <>
             <div className="divide-y divide-slate-50">
@@ -217,7 +344,7 @@ export default function UsersPage() {
             </div>
 
             {/* Load more */}
-            {hasMore && !search && (
+            {hasMore && !search.trim() && (
               <div className="border-t border-slate-50 px-5 py-4 flex justify-center">
                 <button
                   onClick={() => loadUsers(false)}
